@@ -32,3 +32,6 @@
 
 # Ignore master key for decrypting credentials and more.
 /config/master.key
+
+# ignore sorbet debug log: https://sorbet.org/docs/adopting#step-6-source-control
+/sorbet/rbi/hidden-definitions/errors.txt
