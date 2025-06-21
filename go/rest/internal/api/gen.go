@@ -15,6 +15,9 @@ type ServerInterface interface {
 	// Get server configuration
 	// (GET /config)
 	GetConfig(w http.ResponseWriter, r *http.Request)
+	// Simulate a server crash
+	// (GET /crash)
+	GetCrash(w http.ResponseWriter, r *http.Request)
 	// Get health status
 	// (GET /health)
 	GetHealth(w http.ResponseWriter, r *http.Request)
@@ -27,6 +30,12 @@ type Unimplemented struct{}
 // Get server configuration
 // (GET /config)
 func (_ Unimplemented) GetConfig(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Simulate a server crash
+// (GET /crash)
+func (_ Unimplemented) GetCrash(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -50,6 +59,20 @@ func (siw *ServerInterfaceWrapper) GetConfig(w http.ResponseWriter, r *http.Requ
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetConfig(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetCrash operation middleware
+func (siw *ServerInterfaceWrapper) GetCrash(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetCrash(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -188,6 +211,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/config", wrapper.GetConfig)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/crash", wrapper.GetCrash)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/health", wrapper.GetHealth)

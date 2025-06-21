@@ -42,3 +42,11 @@ paths:
                   status:
                     type: string
                     example: OK
+  /crash:
+    get:
+      summary: Simulate a server crash
+      tags:
+        - Server State
+      responses:
+        "500": # status code
+          description: Server crash

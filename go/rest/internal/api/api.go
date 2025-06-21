@@ -27,3 +27,7 @@ func (api *APIServer) GetHealth(w http.ResponseWriter, r *http.Request) {
 func (api *APIServer) GetConfig(w http.ResponseWriter, r *http.Request) {
 	WriteJson(w, api.config)
 }
+
+func (api *APIServer) GetCrash(w http.ResponseWriter, r *http.Request) {
+	panic("Intentional panic for testing!")
+}
