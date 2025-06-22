@@ -3,6 +3,7 @@ package log
 import (
 	"context"
 	"fmt"
+	"log"
 	"net/http"
 	"sync"
 
@@ -10,7 +11,10 @@ import (
 	"github.com/riandyrn/otelchi"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
+	"go.opentelemetry.io/otel/log/global"
+	logsdk "go.opentelemetry.io/otel/sdk/log"
 	"go.opentelemetry.io/otel/sdk/resource"
 	tracesdk "go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.24.0" // Use a specific version for semantic conventions
@@ -31,14 +35,9 @@ func tracerProvider(ctx context.Context) (*tracesdk.TracerProvider, error) {
 		return nil, fmt.Errorf("failed to create jaeger exporter: %w", err)
 	}
 
-	// Create a new TracerProvider.
-	// Always set the TracerProvider, so that tracing can be enabled.
 	tp := tracesdk.NewTracerProvider(
-		// Set the sampling rate. AlwaysSample samples all traces.
 		tracesdk.WithSampler(tracesdk.AlwaysSample()),
-		// Add the Jaeger exporter.
 		tracesdk.WithBatcher(exp),
-		// Define the service resource. This resource describes the entity producing the telemetry.
 		tracesdk.WithResource(resource.NewWithAttributes(
 			semconv.SchemaURL, // Use OpenTelemetry semantic conventions schema URL
 			semconv.ServiceNameKey.String(serviceName),
@@ -49,12 +48,34 @@ func tracerProvider(ctx context.Context) (*tracesdk.TracerProvider, error) {
 	return tp, nil
 }
 
+func logProvider(ctx context.Context) (*logsdk.LoggerProvider, error) {
+	exporter, err := otlploghttp.New(ctx, otlploghttp.WithInsecure())
+	if err != nil {
+		log.Fatalf("failed to create OTLP HTTP log exporter: %v", err)
+	}
+
+	// Create a new sdklog.LoggerProvider
+	lp := logsdk.NewLoggerProvider(
+		logsdk.WithProcessor(logsdk.NewBatchProcessor(exporter)),
+		logsdk.WithResource(resource.NewWithAttributes(
+			semconv.SchemaURL, // Use OpenTelemetry semantic conventions schema URL
+			semconv.ServiceNameKey.String(serviceName),
+			semconv.ServiceVersionKey.String(serviceVersion),
+			attribute.String("environment", "development"),
+		)),
+	)
+	return lp, nil
+}
+
 var once sync.Once
 
 func OpenTelemetryMiddlware(r chi.Routes) func(next http.Handler) http.Handler {
 	once.Do(func() {
 		tp, _ := tracerProvider(context.Background())
 		otel.SetTracerProvider(tp)
+
+		lp, _ := logProvider(context.Background())
+		global.SetLoggerProvider(lp)
 	})
 
 	return otelchi.Middleware(serviceName,

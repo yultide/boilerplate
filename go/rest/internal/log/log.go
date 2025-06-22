@@ -14,7 +14,9 @@ import (
 
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/rs/zerolog"
+	"go.opentelemetry.io/contrib/bridges/otelzerolog"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/log/global"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -29,9 +31,17 @@ func LoggerMiddleware(logger *zerolog.Logger, cfg *config.Config) func(next http
 			ctx := r.Context()
 			span := trace.SpanFromContext(ctx)
 			reqId := middleware.GetReqID(ctx)
+
+			// Create a logger that emits logs to both STDOUT and the OTel Go SDK.
+			provider := global.GetLoggerProvider()
+			hook := otelzerolog.NewHook(serviceName, otelzerolog.WithLoggerProvider(provider))
+
 			log := logger.With().Fields(map[string]interface{}{
 				"req-id": reqId,
-			}).Logger()
+			}).
+				Logger().
+				Hook(hook)
+
 			span.SetAttributes(attribute.String("req-id", middleware.GetReqID(ctx)))
 
 			ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
