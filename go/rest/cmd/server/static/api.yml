@@ -1,0 +1,51 @@
+openapi: 3.0.4
+
+info:
+  title: Rest API
+  description: Sample go REST API
+  version: 0.1.0
+
+servers:
+  - url: http://localhost:4000/
+
+paths:
+  /health:
+    get:
+      summary: Get health status
+      tags:
+        - Server State
+      responses:
+        "200": # status code
+          description: Server status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: OK
+  /config:
+    get:
+      summary: Get server configuration
+      tags:
+        - Server State
+      responses:
+        "200": # status code
+          description: JSON configuration
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+  /crash:
+    get:
+      summary: Simulate a server crash
+      tags:
+        - Server State
+      responses:
+        "500": # status code
+          description: Server crash

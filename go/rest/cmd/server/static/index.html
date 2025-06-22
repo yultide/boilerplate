@@ -1,0 +1,31 @@
+<html>
+  <head>
+    <title>Rest API</title>
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/5.24.0/swagger-ui.min.css"
+      integrity="sha512-wWpxfn2bFvPwxuqDyiJbVB0WR3ffSqJNMMryNP07frPJ1h5Xg9HIDMV1wRr1rpxT5E+KTxDrKTuWfGb1RcV8SA=="
+      crossorigin="anonymous"
+      referrerpolicy="no-referrer"
+    />
+    <script
+      src="https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/5.24.0/swagger-ui-bundle.min.js"
+      integrity="sha512-nEy/zRjIvuFMSr5ljsQUaUW4l7DoSHz8+SRybclmCjCh3MeF9UaooWYdr/SqjGCiyi4RIvBvn9DxCCV0ZDhiNA=="
+      crossorigin="anonymous"
+      referrerpolicy="no-referrer"
+    ></script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script>
+      SwaggerUIBundle({
+        url: `${location.href}api.yml`,
+        dom_id: "#root",
+        presets: [
+          SwaggerUIBundle.presets.apis,
+          SwaggerUIBundle.SwaggerUIStandalonePreset,
+        ],
+      });
+    </script>
+  </body>
+</html>
