@@ -24,7 +24,9 @@ func NewLogger() *zerolog.Logger {
 func LoggerMiddleware(logger *zerolog.Logger, cfg *config.Config) func(next http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		fn := func(w http.ResponseWriter, r *http.Request) {
-			log := logger.With().Logger()
+			log := logger.With().Fields(map[string]interface{}{
+				"req_id": middleware.GetReqID(r.Context()),
+			}).Logger()
 
 			ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
 
@@ -85,7 +87,10 @@ func LoggerMiddleware(logger *zerolog.Logger, cfg *config.Config) func(next http
 					Msgf("%s %s", r.Method, r.URL.Path)
 			}()
 
-			next.ServeHTTP(ww, r)
+			// save log to context
+			rr := r.WithContext(log.WithContext(r.Context()))
+
+			next.ServeHTTP(ww, rr)
 		}
 		return http.HandlerFunc(fn)
 	}
