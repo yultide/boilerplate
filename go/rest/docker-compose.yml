@@ -1,0 +1,67 @@
+# docker-compose.yml
+version: '3.8'
+
+services:
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.18.2
+    networks:
+      - elastic-jaeger
+    ports:
+      - "127.0.0.1:9200:9200"
+      - "127.0.0.1:9300:9300"
+    restart: on-failure
+    environment:
+      - cluster.name=jaeger-cluster
+      - discovery.type=single-node
+      - http.host=0.0.0.0
+      - transport.host=127.0.0.1
+      - ES_JAVA_OPTS=-Xms512m -Xmx512m
+      - xpack.security.enabled=false
+    volumes:
+      - esdata:/usr/share/elasticsearch/data
+
+  # Jaeger All-in-One with Badger Backend
+  # This service includes Jaeger Agent, Collector, and Query UI.
+  # It uses Badger as the storage backend, which is suitable for local development
+  # or small deployments due to its simplicity and embedded nature.
+  jaeger:
+    image: jaegertracing/all-in-one:1.57.0 # Using a specific stable version
+    command: [
+      "--es.server-urls=http://elasticsearch:9200",
+      "--es.num-shards=1",
+      "--es.num-replicas=0",
+      "--log-level=error"
+    ]
+    networks:
+      - elastic-jaeger
+    ports:
+      - "16686:16686" # Jaeger UI (web interface)
+      - "14268:14268" # Jaeger HTTP receiver (for Thrift compact)
+      - "14250:14250" # Jaeger gRPC receiver (for Collector)
+      - "4317:4317" # OTLP gRPC receiver (Jaeger can also receive OTLP directly)
+      - "4318:4318" # OTLP HTTP receiver (Jaeger can also receive HTTP directly)
+      - "6831:6831/udp" # Jaeger UDP agent (for Thrift compact/binary)
+      - "6832:6832/udp" # Jaeger UDP agent (for Thrift compact/binary, deprecated)
+    environment:
+      # Optional: Set memory limits for Badger, adjust based on your needs.
+      - JAEGER_BADGER_MAX_INDEX_MB=512
+      - JAEGER_BADGER_MAX_VALUE_MB=2048
+      # Optional: Configure Jaeger service name, though not strictly necessary for basic setup.
+      - JAEGER_SERVICE_NAME=jaeger-all-in-one
+      - SPAN_STORAGE_TYPE=elasticsearch
+      - COLLECTOR_OTLP_ENABLED=true
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:16686"] # Check Jaeger UI availability
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    depends_on:
+      - elasticsearch
+
+volumes:
+  esdata:
+    driver: local
+
+networks:
+  elastic-jaeger:
+    driver: bridge 

@@ -14,6 +14,8 @@ import (
 
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/rs/zerolog"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 func NewLogger() *zerolog.Logger {
@@ -24,9 +26,13 @@ func NewLogger() *zerolog.Logger {
 func LoggerMiddleware(logger *zerolog.Logger, cfg *config.Config) func(next http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		fn := func(w http.ResponseWriter, r *http.Request) {
+			ctx := r.Context()
+			span := trace.SpanFromContext(ctx)
+			reqId := middleware.GetReqID(ctx)
 			log := logger.With().Fields(map[string]interface{}{
-				"req_id": middleware.GetReqID(r.Context()),
+				"req-id": reqId,
 			}).Logger()
+			span.SetAttributes(attribute.String("req-id", middleware.GetReqID(ctx)))
 
 			ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
 
@@ -70,21 +76,38 @@ func LoggerMiddleware(logger *zerolog.Logger, cfg *config.Config) func(next http
 				}
 
 				// log end request
+				fields := map[string]interface{}{
+					"remote-ip":  r.RemoteAddr,
+					"url":        r.URL.Path,
+					"proto":      r.Proto,
+					"method":     r.Method,
+					"headers":    ToMap(r.Header),
+					"body":       body,
+					"user-agent": r.Header.Get("User-Agent"),
+					"status":     ww.Status(),
+					"latency-ms": float64(t2.Sub(t1).Nanoseconds()) / 1000000.0,
+					"bytes-in":   r.Header.Get("Content-Length"),
+					"bytes-out":  ww.BytesWritten(),
+				}
 				log.Info().
-					Fields(map[string]interface{}{
-						"remote_ip":  r.RemoteAddr,
-						"url":        r.URL.Path,
-						"proto":      r.Proto,
-						"method":     r.Method,
-						"headers":    ToMap(r.Header),
-						"body":       body,
-						"user_agent": r.Header.Get("User-Agent"),
-						"status":     ww.Status(),
-						"latency_ms": float64(t2.Sub(t1).Nanoseconds()) / 1000000.0,
-						"bytes_in":   r.Header.Get("Content-Length"),
-						"bytes_out":  ww.BytesWritten(),
-					}).
+					Fields(fields).
 					Msgf("%s %s", r.Method, r.URL.Path)
+
+				for k, i := range fields {
+					switch v := i.(type) {
+					case string:
+						span.SetAttributes(attribute.String(k, v))
+					case int:
+						span.SetAttributes(attribute.Int(k, v))
+					case float64:
+						span.SetAttributes(attribute.Float64(k, v))
+					case []string:
+						span.SetAttributes(attribute.StringSlice(k, v))
+					default:
+						jv, _ := json.Marshal(v)
+						span.SetAttributes(attribute.String(k, string(jv)))
+					}
+				}
 			}()
 
 			// save log to context
