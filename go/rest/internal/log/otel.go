@@ -2,8 +2,9 @@ package log
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
-	"log"
+	"go-rest/internal/config"
 	"net/http"
 	"sync"
 
@@ -11,26 +12,20 @@ import (
 	"github.com/riandyrn/otelchi"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
-	"go.opentelemetry.io/otel/log/global"
-	logsdk "go.opentelemetry.io/otel/sdk/log"
 	"go.opentelemetry.io/otel/sdk/resource"
 	tracesdk "go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.24.0" // Use a specific version for semantic conventions
 )
 
 const (
-	serviceName    = "chi-go-service"
-	serviceVersion = "1.0.0"
-	jaegerURL      = "http://localhost:4318/v1/traces" // OLTP gRPC
+	serviceName = "go-rest"
 )
 
 // tracerProvider returns an OpenTelemetry TracerProvider configured to export to Jaeger.
-func tracerProvider(ctx context.Context) (*tracesdk.TracerProvider, error) {
+func tracerProvider(ctx context.Context, cfg *config.Config) (*tracesdk.TracerProvider, error) {
 	exp, err := otlptracehttp.New(ctx,
-		otlptracehttp.WithInsecure(),
-		otlptracehttp.WithEndpointURL(jaegerURL))
+		otlptracehttp.WithEndpointURL(cfg.OtelEndpoint))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create jaeger exporter: %w", err)
 	}
@@ -41,44 +36,42 @@ func tracerProvider(ctx context.Context) (*tracesdk.TracerProvider, error) {
 		tracesdk.WithResource(resource.NewWithAttributes(
 			semconv.SchemaURL, // Use OpenTelemetry semantic conventions schema URL
 			semconv.ServiceNameKey.String(serviceName),
-			semconv.ServiceVersionKey.String(serviceVersion),
+			semconv.ServiceVersionKey.String(cfg.Version),
 			attribute.String("environment", "development"),
 		)),
 	)
 	return tp, nil
 }
 
-func logProvider(ctx context.Context) (*logsdk.LoggerProvider, error) {
-	exporter, err := otlploghttp.New(ctx, otlploghttp.WithInsecure())
-	if err != nil {
-		log.Fatalf("failed to create OTLP HTTP log exporter: %v", err)
-	}
-
-	// Create a new sdklog.LoggerProvider
-	lp := logsdk.NewLoggerProvider(
-		logsdk.WithProcessor(logsdk.NewBatchProcessor(exporter)),
-		logsdk.WithResource(resource.NewWithAttributes(
-			semconv.SchemaURL, // Use OpenTelemetry semantic conventions schema URL
-			semconv.ServiceNameKey.String(serviceName),
-			semconv.ServiceVersionKey.String(serviceVersion),
-			attribute.String("environment", "development"),
-		)),
-	)
-	return lp, nil
-}
-
 var once sync.Once
 
-func OpenTelemetryMiddlware(r chi.Routes) func(next http.Handler) http.Handler {
+func OpenTelemetryMiddlware(r chi.Routes, cfg *config.Config) func(next http.Handler) http.Handler {
 	once.Do(func() {
-		tp, _ := tracerProvider(context.Background())
+		tp, _ := tracerProvider(context.Background(), cfg)
 		otel.SetTracerProvider(tp)
-
-		lp, _ := logProvider(context.Background())
-		global.SetLoggerProvider(lp)
 	})
 
 	return otelchi.Middleware(serviceName,
 		otelchi.WithRequestMethodInSpanName(true),
 		otelchi.WithChiRoutes(r))
+}
+
+func toAttrs(m map[string]interface{}) []attribute.KeyValue {
+	attrs := make([]attribute.KeyValue, 0, len(m))
+	for k, i := range m {
+		switch v := i.(type) {
+		case string:
+			attrs = append(attrs, attribute.String(k, v))
+		case int:
+			attrs = append(attrs, attribute.Int(k, v))
+		case float64:
+			attrs = append(attrs, attribute.Float64(k, v))
+		case []string:
+			attrs = append(attrs, attribute.StringSlice(k, v))
+		default:
+			jv, _ := json.Marshal(v)
+			attrs = append(attrs, attribute.String(k, string(jv)))
+		}
+	}
+	return attrs
 }

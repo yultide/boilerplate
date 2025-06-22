@@ -18,6 +18,7 @@ type Config struct {
 	BuiltAt        string        `json:"builtAt"`
 	MaxRequestBody int64         `json:"maxRequestBody"`
 	RequestTimeout time.Duration `json:"requestTimeout"`
+	OtelEndpoint   string        `env:"OtelEndpoint" envDefault:"http://localhost:4318/v1/traces" json:"otelEndpoint"`
 	Host           string        `env:"HOST" envDefault:"localhost" json:"host"`
 	Port           int32         `env:"PORT" envDefault:"4000" json:"port"`
 }

@@ -19,6 +19,12 @@ services:
       - xpack.security.enabled=false
     volumes:
       - esdata:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:9200/_cluster/health?wait_for_status=yellow&timeout=5s || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
 
   # Jaeger All-in-One with Badger Backend
   # This service includes Jaeger Agent, Collector, and Query UI.

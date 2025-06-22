@@ -7,16 +7,16 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"reflect"
 	"runtime/debug"
+	"strconv"
 	"time"
 
 	"go-rest/internal/config"
 
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/rs/zerolog"
-	"go.opentelemetry.io/contrib/bridges/otelzerolog"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/log/global"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -25,6 +25,16 @@ func NewLogger() *zerolog.Logger {
 	return &logger
 }
 
+var hook = zerolog.HookFunc(func(e *zerolog.Event, level zerolog.Level, msg string) {
+	logData := map[string]interface{}{}
+	ev := fmt.Sprintf("%s}", reflect.ValueOf(e).Elem().FieldByName("buf"))
+	json.Unmarshal([]byte(ev), &logData)
+	span := trace.SpanFromContext(e.GetCtx())
+	span.AddEvent(msg, trace.WithAttributes(
+		toAttrs(logData)...,
+	), trace.WithStackTrace(true))
+})
+
 func LoggerMiddleware(logger *zerolog.Logger, cfg *config.Config) func(next http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		fn := func(w http.ResponseWriter, r *http.Request) {
@@ -32,11 +42,7 @@ func LoggerMiddleware(logger *zerolog.Logger, cfg *config.Config) func(next http
 			span := trace.SpanFromContext(ctx)
 			reqId := middleware.GetReqID(ctx)
 
-			// Create a logger that emits logs to both STDOUT and the OTel Go SDK.
-			provider := global.GetLoggerProvider()
-			hook := otelzerolog.NewHook(serviceName, otelzerolog.WithLoggerProvider(provider))
-
-			log := logger.With().Fields(map[string]interface{}{
+			log := logger.With().Ctx(ctx).Fields(map[string]interface{}{
 				"req-id": reqId,
 			}).
 				Logger().
@@ -86,38 +92,28 @@ func LoggerMiddleware(logger *zerolog.Logger, cfg *config.Config) func(next http
 				}
 
 				// log end request
+				bytesIn, _ := strconv.Atoi(r.Header.Get("Content-Length"))
 				fields := map[string]interface{}{
 					"remote-ip":  r.RemoteAddr,
 					"url":        r.URL.Path,
 					"proto":      r.Proto,
 					"method":     r.Method,
-					"headers":    ToMap(r.Header),
-					"body":       body,
+					"headers":    toMap(r.Header),
 					"user-agent": r.Header.Get("User-Agent"),
 					"status":     ww.Status(),
 					"latency-ms": float64(t2.Sub(t1).Nanoseconds()) / 1000000.0,
-					"bytes-in":   r.Header.Get("Content-Length"),
+					"bytes-in":   bytesIn,
 					"bytes-out":  ww.BytesWritten(),
 				}
+				if body != nil {
+					fields["body"] = body
+				}
+
 				log.Info().
 					Fields(fields).
 					Msgf("%s %s", r.Method, r.URL.Path)
 
-				for k, i := range fields {
-					switch v := i.(type) {
-					case string:
-						span.SetAttributes(attribute.String(k, v))
-					case int:
-						span.SetAttributes(attribute.Int(k, v))
-					case float64:
-						span.SetAttributes(attribute.Float64(k, v))
-					case []string:
-						span.SetAttributes(attribute.StringSlice(k, v))
-					default:
-						jv, _ := json.Marshal(v)
-						span.SetAttributes(attribute.String(k, string(jv)))
-					}
-				}
+				span.SetAttributes(toAttrs(fields)...)
 			}()
 
 			// save log to context
@@ -129,7 +125,7 @@ func LoggerMiddleware(logger *zerolog.Logger, cfg *config.Config) func(next http
 	}
 }
 
-func ToMap(h http.Header) map[string]interface{} {
+func toMap(h http.Header) map[string]interface{} {
 	m := map[string]interface{}{}
 	for k, v := range h {
 		if len(v) == 1 {

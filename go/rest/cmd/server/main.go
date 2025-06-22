@@ -2,7 +2,6 @@ package main
 
 import (
 	"embed"
-	_ "embed"
 	"fmt"
 	"net/http"
 
@@ -28,7 +27,7 @@ func main() {
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
 	r.Use(middleware.Recoverer)
-	r.Use(log.OpenTelemetryMiddlware(r))
+	r.Use(log.OpenTelemetryMiddlware(r, cfg))
 	r.Use(log.LoggerMiddleware(logger, cfg))
 
 	// get an `http.Handler` that we can use
